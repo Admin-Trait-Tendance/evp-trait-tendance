@@ -923,7 +923,7 @@ function App() {
     await supabase.from("saisies").delete().eq("id", id);
   }
 
-  async function logout() {
+  async async function logout() {
     await supabase.auth.signOut();
     setSession(null);
   }
