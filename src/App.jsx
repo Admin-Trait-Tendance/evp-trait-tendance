@@ -483,7 +483,7 @@ function LoginPage({onLogin,onAdminAccess}) {
 function ExtraApp({user, saisies, onSave, onLogout}) {
   const [tab,setTab]=useState("saisie");
   const [contratSaisie,setContratSaisie]=useState(null);
-  const mesSaisies=useMemo(()=>saisies.filter(s=>s.userId===user.id).sort((a,b)=>b.date.localeCompare(a.date)),[saisies,user]);
+  const mesSaisies=useMemo(()=>saisies.filter(s=>s.userId===user.id||s.userId===user.email).sort((a,b)=>b.date.localeCompare(a.date)),[saisies,user]);
   const totalBrut=useMemo(()=>mesSaisies.reduce((s,r)=>s+calcTotal(r),0),[mesSaisies]);
   const totalVac=useMemo(()=>mesSaisies.reduce((s,r)=>s+calcH(r.heureArrivee,r.heureDepart).vac,0),[mesSaisies]);
 
@@ -866,7 +866,9 @@ export default function App() {
 
   async function addSaisie(s) {
     const { id, createdAt, created_at, ...data } = s;
-    await supabase.from("saisies").insert([data]);
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const userId = authUser?.id || data.userId || "admin";
+    await supabase.from("saisies").insert([{ ...data, userId }]);
   }
 
   async function delSaisie(id) {
