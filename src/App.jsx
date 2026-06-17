@@ -514,7 +514,7 @@ function ExtraApp({user, saisies, onSave, onLogout}) {
 
         {/* Tabs */}
         <div style={{display:"flex",gap:8,marginBottom:20}}>
-          {[["saisie","Saisir une vacation","ti-edit"],["contrats","Mes contrats","ti-file-text"]].map(([id,lbl,ic])=>(
+          {[["saisie","Saisir une vacation","ti-edit"],["contrats","Mes contrats","ti-file-text"],["calendrier","Calendrier","ti-calendar"]].map(([id,lbl,ic])=>(
             <button key={id} className={`nm-tab${tab===id?" active":""}`} onClick={()=>setTab(id)}>
               <i className={`ti ${ic}`}/> {lbl}
             </button>
@@ -533,6 +533,9 @@ function ExtraApp({user, saisies, onSave, onLogout}) {
         )}
 
         {contratSaisie&&<ContratModal saisie={contratSaisie} readonlyExtra={user} onClose={()=>setContratSaisie(null)}/>}
+      {tab==="calendrier"&&(
+          <CalendrierVue saisies={saisies} userId={user.id} isAdmin={false}/>
+        )}
       {tab==="contrats"&&(
           <div className="fade-in">
             {mesSaisies.length===0?(
@@ -780,6 +783,7 @@ function AdminApp({saisies,users,onAddSaisie,onDeleteSaisie,onLogout}) {
   const TABS=[
     {id:"extras",lbl:"Extras",ic:"ti-users"},
     {id:"vue",lbl:"Toutes les saisies",ic:"ti-table"},
+    {id:"calendrier",lbl:"Calendrier",ic:"ti-calendar"},
     {id:"saisie",lbl:"Nouvelle saisie",ic:"ti-plus"},
   ];
 
@@ -811,6 +815,7 @@ function AdminApp({saisies,users,onAddSaisie,onDeleteSaisie,onLogout}) {
 
         {tab==="extras"&&!selectedExtra&&<AdminExtras saisies={saisies} onSelectExtra={handleSelectExtra}/>}
         {tab==="extras"&&selectedExtra&&<ExtraDetail extra={selectedExtra} saisies={saisies} onBack={()=>setSelectedExtra(null)}/>}
+        {tab==="calendrier"&&<CalendrierVue saisies={saisies} isAdmin={true}/>}
         {tab==="vue"&&<AdminVue saisies={saisies} onDelete={onDeleteSaisie}/>}
         {tab==="saisie"&&(
           <div className="nm-card fade-in" style={{maxWidth:680}}>
@@ -1081,10 +1086,34 @@ export function ContratModal({ saisie, onClose, readonlyExtra = null }) {
 
   async function handleSendEmail() {
     if (!emailTo) { alert("Saisissez un email."); return; }
-    setSending(true);
-    await new Promise(r => setTimeout(r, 1200));
+    setSending(true); setSendResult(null);
+    try {
+      // Load EmailJS if not already loaded
+      if (!window.emailjs) {
+        await new Promise((res, rej) => {
+          const s = document.createElement("script");
+          s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
+          s.onload = res; s.onerror = rej;
+          document.head.appendChild(s);
+        });
+        window.emailjs.init({ publicKey: "UMmVdY9mnWcbgPbrn" });
+      }
+      await window.emailjs.send("service_9pk32np", "template_bww3bdr", {
+        to_email: emailTo,
+        to_name: `${saisie.prenom} ${saisie.nom}`,
+        evenement: saisie.evenement,
+        date: saisie.date,
+        poste: saisie.poste,
+        total: calcTotal(saisie).toFixed(2),
+        pdf_link: pdfUri,
+        from_name: "Trait'Tendance"
+      });
+      setSendResult(`✓ Contrat envoyé à ${emailTo}`);
+    } catch(e) {
+      console.error(e);
+      setSendResult(`⚠ Erreur d'envoi. Vérifiez la configuration EmailJS.`);
+    }
     setSending(false);
-    setSendResult(`Contrat envoyé à ${emailTo} ✓`);
   }
 
   const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.55)", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" };
@@ -1156,6 +1185,235 @@ export function ContratModal({ saisie, onClose, readonlyExtra = null }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPOSANT CALENDRIER — Vue mensuelle avec saisies par jour
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CalendrierVue({ saisies, userId = null, isAdmin = false }) {
+  const today = new Date();
+  const [year,  setYear]  = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth()); // 0-based
+  const [filterExtra, setFilterExtra] = useState("Tous");
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  // Liste des extras pour le filtre admin
+  const extras = useMemo(() => {
+    const map = {};
+    saisies.forEach(s => { map[`${s.nom}|${s.prenom}`] = `${s.nom} ${s.prenom}`; });
+    return Object.entries(map).sort((a,b) => a[1].localeCompare(b[1]));
+  }, [saisies]);
+
+  // Saisies filtrées selon le contexte
+  const filtered = useMemo(() => {
+    let rows = saisies;
+    if (userId) rows = rows.filter(s => s.userId === userId);
+    if (isAdmin && filterExtra !== "Tous") {
+      const [nom, prenom] = filterExtra.split("|");
+      rows = rows.filter(s => s.nom === nom && s.prenom === prenom);
+    }
+    return rows;
+  }, [saisies, userId, isAdmin, filterExtra]);
+
+  // Regrouper par date
+  const byDate = useMemo(() => {
+    const map = {};
+    filtered.forEach(s => {
+      if (!map[s.date]) map[s.date] = [];
+      map[s.date].push(s);
+    });
+    return map;
+  }, [filtered]);
+
+  // Jours du mois
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const firstDayMon = (firstDay + 6) % 7; // 0=Mon
+
+  function prevMonth() { if (month === 0) { setMonth(11); setYear(y => y-1); } else setMonth(m => m-1); setSelectedDay(null); }
+  function nextMonth() { if (month === 11) { setMonth(0); setYear(y => y+1); } else setMonth(m => m+1); setSelectedDay(null); }
+
+  function fmtKey(d) {
+    return `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  }
+
+  const JOURS = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+
+  const selectedKey = selectedDay ? fmtKey(selectedDay) : null;
+  const selectedRows = selectedKey ? (byDate[selectedKey] || []) : [];
+
+  // Stats mois
+  const monthSaisies = filtered.filter(s => s.date && s.date.startsWith(`${year}-${String(month+1).padStart(2,'0')}`));
+  const monthTotal = monthSaisies.reduce((s,r) => s + calcTotal(r), 0);
+  const monthVac   = monthSaisies.reduce((s,r) => s + calcH(r.heureArrivee, r.heureDepart).vac, 0);
+
+  return (
+    <div className="fade-in">
+      {/* Filtre extra admin */}
+      {isAdmin && (
+        <div style={{marginBottom:16,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"var(--tt-text-3)"}}>Extra :</span>
+          <select className="nm-input" value={filterExtra} onChange={e=>setFilterExtra(e.target.value)} style={{maxWidth:220}}>
+            <option value="Tous">Tous les extras</option>
+            {extras.map(([key,lbl]) => <option key={key} value={key}>{lbl}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* Navigation mois */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <button className="nm-btn" onClick={prevMonth} style={{padding:"8px 14px"}}>
+          <i className="ti ti-chevron-left"/>
+        </button>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontWeight:700,fontSize:18,color:"var(--tt-gold)"}}>{MONTHS_FR[month]} {year}</div>
+          <div style={{fontSize:12,color:"var(--tt-text-3)",marginTop:2}}>
+            {monthSaisies.length} saisie(s) · {monthVac.toFixed(1)} vac · {monthTotal.toFixed(2)} €
+          </div>
+        </div>
+        <button className="nm-btn" onClick={nextMonth} style={{padding:"8px 14px"}}>
+          <i className="ti ti-chevron-right"/>
+        </button>
+      </div>
+
+      {/* Grille calendrier */}
+      <div className="nm-card" style={{padding:12,marginBottom:16}}>
+        {/* En-têtes jours */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
+          {JOURS.map(j => (
+            <div key={j} style={{textAlign:"center",fontSize:11,fontWeight:600,color:"var(--tt-text-3)",padding:"4px 0"}}>{j}</div>
+          ))}
+        </div>
+        {/* Cases */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+          {/* Vide avant le 1er */}
+          {Array(firstDayMon).fill(null).map((_,i) => <div key={`e${i}`}/>)}
+          {/* Jours */}
+          {Array(daysInMonth).fill(null).map((_,i) => {
+            const d = i + 1;
+            const key = fmtKey(d);
+            const rows = byDate[key] || [];
+            const hasData = rows.length > 0;
+            const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear();
+            const isSelected = selectedDay === d;
+            const dayTotal = rows.reduce((s,r) => s + calcTotal(r), 0);
+
+            return (
+              <div key={d} onClick={() => setSelectedDay(isSelected ? null : d)}
+                style={{
+                  borderRadius:8,
+                  padding:"6px 4px",
+                  textAlign:"center",
+                  cursor: hasData ? "pointer" : "default",
+                  background: isSelected ? "var(--tt-bg)" : hasData ? "var(--tt-surface)" : "transparent",
+                  boxShadow: isSelected ? "var(--tt-shadow-in)" : hasData ? "var(--tt-shadow-sm)" : "none",
+                  border: isToday ? "1.5px solid var(--tt-gold)" : "1.5px solid transparent",
+                  transition:"all .15s",
+                  minHeight:56,
+                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",gap:2
+                }}>
+                <div style={{fontSize:13,fontWeight:isToday?700:500,color:isToday?"var(--tt-gold)":"var(--tt-text)"}}>{d}</div>
+                {hasData && (
+                  <>
+                    <div style={{fontSize:10,color:"var(--tt-gold)",fontWeight:600}}>{rows.length}×</div>
+                    <div style={{fontSize:10,color:"var(--tt-text-3)"}}>{dayTotal.toFixed(0)}€</div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Détail du jour sélectionné */}
+      {selectedDay && (
+        <div className="fade-in">
+          <div style={{fontWeight:600,fontSize:15,marginBottom:12,color:"var(--tt-text)"}}>
+            {selectedDay} {MONTHS_FR[month]} {year}
+            {selectedRows.length === 0 && <span style={{color:"var(--tt-text-3)",fontWeight:400,fontSize:13}}> — Aucune saisie</span>}
+          </div>
+          {selectedRows.length > 0 && (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {selectedRows.map(s => {
+                const {vac,hsAv,hsAp} = calcH(s.heureArrivee, s.heureDepart);
+                return (
+                  <div key={s.id} className="nm-card" style={{padding:14}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                      <div>
+                        {isAdmin && <div style={{fontWeight:600,fontSize:14,marginBottom:2}}>{s.nom} {s.prenom}</div>}
+                        <div style={{fontWeight:isAdmin?400:600,fontSize:isAdmin?13:14}}>{s.evenement}</div>
+                        <div style={{fontSize:12,color:"var(--tt-text-2)",marginTop:2}}>{s.heureArrivee}–{s.heureDepart} · {s.poste}</div>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontWeight:700,fontSize:16,color:"var(--tt-gold)"}}>{calcTotal(s).toFixed(2)} €</div>
+                        <div style={{fontSize:11,color:"var(--tt-text-3)"}}>brut estimé</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:12,flexWrap:"wrap",fontSize:12,marginTop:8,color:"var(--tt-text-2)"}}>
+                      <span>Vac : <strong>{vac}</strong></span>
+                      {hsAv>0 && <span style={{color:"#854F0B"}}>HS&lt; : <strong>{hsAv}h</strong></span>}
+                      {hsAp>0 && <span style={{color:"#A32D2D"}}>HS&gt; : <strong>{hsAp}h</strong></span>}
+                      {s.estResponsable && <span>Resp ×<strong>{s.primeResp}</strong></span>}
+                      <DeplBadge val={s.deplacement}/>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Total du jour */}
+              <div className="nm-inset" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,color:"var(--tt-text-2)"}}>Total du jour</span>
+                <span style={{fontWeight:700,fontSize:16,color:"var(--tt-gold)"}}>
+                  {selectedRows.reduce((s,r)=>s+calcTotal(r),0).toFixed(2)} €
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Liste des jours du mois avec saisies */}
+      {!selectedDay && monthSaisies.length > 0 && (
+        <div>
+          <div style={{fontSize:12,color:"var(--tt-text-3)",marginBottom:10,textTransform:"uppercase",letterSpacing:".05em"}}>Toutes les saisies du mois</div>
+          {Object.entries(byDate)
+            .filter(([k]) => k.startsWith(`${year}-${String(month+1).padStart(2,'0')}`))
+            .sort((a,b) => a[0].localeCompare(b[0]))
+            .map(([date, rows]) => {
+              const [y,m,d] = date.split("-");
+              const dayTotal = rows.reduce((s,r)=>s+calcTotal(r),0);
+              return (
+                <div key={date} className="nm-card" style={{marginBottom:10,padding:0,overflow:"hidden"}}>
+                  <div style={{padding:"10px 14px",background:"var(--tt-bg)",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}
+                    onClick={()=>setSelectedDay(parseInt(d))}>
+                    <div style={{fontWeight:600,fontSize:14}}>{parseInt(d)} {MONTHS_FR[parseInt(m)-1]}</div>
+                    <div style={{display:"flex",gap:16,alignItems:"center",fontSize:13}}>
+                      <span style={{color:"var(--tt-text-3)"}}>{rows.length} saisie(s)</span>
+                      <span style={{fontWeight:600,color:"var(--tt-gold)"}}>{dayTotal.toFixed(2)} €</span>
+                    </div>
+                  </div>
+                  <div style={{overflowX:"auto"}}>
+                    <table>
+                      <tbody>
+                        {rows.map(s => (
+                          <tr key={s.id}>
+                            {isAdmin && <td style={{fontWeight:500}}>{s.nom} {s.prenom}</td>}
+                            <td>{s.evenement}</td>
+                            <td style={{whiteSpace:"nowrap"}}>{s.heureArrivee}–{s.heureDepart}</td>
+                            <td>{s.poste}</td>
+                            <td style={{textAlign:"right",fontWeight:600,color:"var(--tt-gold)"}}>{calcTotal(s).toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 }
