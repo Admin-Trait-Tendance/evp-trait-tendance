@@ -357,11 +357,17 @@ function FormulaireVacation({onSave, defaultNom="", defaultPrenom="", readOnlyId
 function LoginPage({onLogin,onAdminAccess}) {
   const [email,setEmail]=useState("");
   const [pwd,setPwd]=useState("");
+  const [nom,setNom]=useState("");
+  const [prenom,setPrenom]=useState("");
   const [err,setErr]=useState("");
   const [mode,setMode]=useState("extra"); // extra | admin
+  const [subMode,setSubMode]=useState("login"); // login | register
+  const [loading,setLoading]=useState(false);
 
   async function handleExtra(){
+    setLoading(true); setErr("");
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pwd });
+    setLoading(false);
     if (error || !data.user) { setErr("Email ou mot de passe incorrect."); return; }
     if (ADMIN_EMAILS.includes(data.user.email)) {
       await supabase.auth.signOut();
@@ -370,11 +376,30 @@ function LoginPage({onLogin,onAdminAccess}) {
     }
     const meta = data.user.user_metadata || {};
     onLogin({ id: data.user.id, email: data.user.email,
-      nom: meta.nom || data.user.email.split("@")[0].toUpperCase(),
-      prenom: meta.prenom || "" });
+      nom: meta.nom || nom || data.user.email.split("@")[0].toUpperCase(),
+      prenom: meta.prenom || prenom || "" });
   }
+
+  async function handleRegister(){
+    setLoading(true); setErr("");
+    if (!nom || !prenom) { setErr("Veuillez saisir votre nom et prénom."); setLoading(false); return; }
+    const { data, error } = await supabase.auth.signUp({
+      email, password: pwd,
+      options: { data: { nom: nom.toUpperCase(), prenom } }
+    });
+    setLoading(false);
+    if (error) { setErr(error.message); return; }
+    if (data.user) {
+      onLogin({ id: data.user.id, email: data.user.email, nom: nom.toUpperCase(), prenom });
+    } else {
+      setErr("Vérifiez votre email pour confirmer votre compte.");
+    }
+  }
+
   async function handleAdmin(){
+    setLoading(true); setErr("");
     const { data, error } = await supabase.auth.signInWithPassword({ email, password: pwd });
+    setLoading(false);
     if (error || !data.user) { setErr("Email ou mot de passe incorrect."); return; }
     if (!ADMIN_EMAILS.includes(data.user.email)) {
       await supabase.auth.signOut();
