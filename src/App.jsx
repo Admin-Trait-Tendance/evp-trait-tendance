@@ -429,17 +429,45 @@ function LoginPage({onLogin,onAdminAccess}) {
             ))}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {mode==="extra" && (
+              <div style={{display:"flex",gap:6,padding:4,borderRadius:"var(--tt-r-pill)",background:"var(--tt-bg)",boxShadow:"var(--tt-shadow-in)",marginBottom:4}}>
+                {[["login","Se connecter"],["register","Créer un compte"]].map(([id,lbl])=>(
+                  <button key={id} onClick={()=>{setSubMode(id);setErr("");}} style={{flex:1,padding:"7px 0",border:"none",borderRadius:"var(--tt-r-pill)",cursor:"pointer",fontWeight:500,fontSize:12,fontFamily:"inherit",transition:"all .15s",
+                    background:subMode===id?"var(--tt-surface)":"transparent",
+                    boxShadow:subMode===id?"var(--tt-shadow-btn)":"none",
+                    color:subMode===id?"var(--tt-gold)":"var(--tt-text-2)"}}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            )}
+            {mode==="extra" && subMode==="register" && (
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><label style={{fontSize:11,color:"var(--tt-text-3)",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Nom</label>
+                  <input className="nm-input" value={nom} onChange={e=>setNom(e.target.value)} placeholder="DUPONT"/></div>
+                <div><label style={{fontSize:11,color:"var(--tt-text-3)",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Prénom</label>
+                  <input className="nm-input" value={prenom} onChange={e=>setPrenom(e.target.value)} placeholder="Alice"/></div>
+              </div>
+            )}
             <div><label style={{fontSize:11,color:"var(--tt-text-3)",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>Email</label>
               <input className="nm-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="votre@email.com"/>
             </div>
-            <div><label style={{fontSize:11,color:"var(--tt-text-3)",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>{mode==="extra"?"Mot de passe":"Clé d'accès admin"}</label>
-              <input className="nm-input" type="password" value={pwd} onChange={e=>setPwd(e.target.value)} placeholder={mode==="extra"?"••••••••":"••••••••••••"}
-                onKeyDown={e=>e.key==="Enter"&&(mode==="extra"?handleExtra():handleAdmin())}/>
+            <div><label style={{fontSize:11,color:"var(--tt-text-3)",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:".05em"}}>{mode==="admin"?"Clé d'accès admin":"Mot de passe"}</label>
+              <input className="nm-input" type="password" value={pwd} onChange={e=>setPwd(e.target.value)} placeholder="••••••••"
+                onKeyDown={e=>{if(e.key!=="Enter") return; mode==="admin"?handleAdmin():subMode==="register"?handleRegister():handleExtra();}}/>
             </div>
             {err&&<div style={{fontSize:12,color:"#A32D2D",padding:"8px 12px",background:"#FCEBEB",borderRadius:8}}>{err}</div>}
-            <button className="nm-btn primary" onClick={mode==="extra"?handleExtra:handleAdmin} style={{width:"100%",justifyContent:"center",padding:13,marginTop:4}}>
-              {mode==="extra"?"Se connecter":"Accès administration"}
+            <button className="nm-btn primary" disabled={loading}
+              onClick={mode==="admin"?handleAdmin:subMode==="register"?handleRegister:handleExtra}
+              style={{width:"100%",justifyContent:"center",padding:13,marginTop:4}}>
+              {loading?"…":mode==="admin"?"Accès administration":subMode==="register"?"Créer mon compte":"Se connecter"}
             </button>
+            {mode==="extra" && subMode==="login" && (
+              <div style={{textAlign:"center",fontSize:12,color:"var(--tt-text-3)"}}>
+                Pas encore de compte ?{" "}
+                <span onClick={()=>setSubMode("register")} style={{color:"var(--tt-gold)",cursor:"pointer",fontWeight:500}}>Créer un compte</span>
+              </div>
+            )}
           </div>
           <div className="nm-divider" style={{marginTop:24}}/>
           <div style={{fontSize:11,color:"var(--tt-text-3)",textAlign:"center"}}>
