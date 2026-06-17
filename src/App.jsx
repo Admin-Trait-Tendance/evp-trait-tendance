@@ -379,7 +379,8 @@ function LoginPage({onLogin,onAdminAccess}) {
     const meta = data.user.user_metadata || {};
     onLogin({ id: data.user.id, email: data.user.email,
       nom: meta.nom || nom || data.user.email.split("@")[0].toUpperCase(),
-      prenom: meta.prenom || prenom || "" });
+      prenom: meta.prenom || prenom || "",
+      poste: meta.poste || "" });
   }
 
   async function handleRegister(){
