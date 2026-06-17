@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "./supabase.js";
+import LogistiqueApp, { AdminLogApp } from "./Logistique.jsx";
 
 // ── Design tokens Trait'Tendance néomorphisme ─────────────────────────────────
 const CSS = `
@@ -140,6 +141,7 @@ const DEPL_OPTIONS = ["Aucun","Circulaire","Petite","Moyenne","Grande"];
 const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 const ADMIN_TOKEN = "tt-admin-2025";
 const ADMIN_EMAILS = ["admin@trait-tendance.fr", "comptabilite@trait-tendance.com"];
+const INTERNE_POSTES = ["Logistique","Cuisinier","Plonge"];
 
 // ── Données depuis Supabase ──────────────────────────────────────────────────
 const DEMO_USERS = [];
@@ -829,7 +831,42 @@ function AdminApp({saisies,users,onAddSaisie,onDeleteSaisie,onLogout}) {
 }
 
 // ── ROOT — Supabase connecté ─────────────────────────────────────────────────
-export default function App() {
+export default 
+// ─────────────────────────────────────────────────────────────────────────────
+// PAGE DE CHOIX DU MODULE — après connexion admin
+// ─────────────────────────────────────────────────────────────────────────────
+function ModuleChoixAdmin({ onExtras, onLogistique, onLogout }) {
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"var(--tt-bg)",padding:24}}>
+      <div style={{marginBottom:32,textAlign:"center"}}>
+        <div style={{fontSize:11,letterSpacing:".15em",textTransform:"uppercase",color:"var(--tt-text-3)",marginBottom:8}}>Trait'Tendance</div>
+        <div style={{fontSize:22,fontWeight:700,color:"var(--tt-text)"}}>Espace Administration</div>
+        <div style={{fontSize:14,color:"var(--tt-text-3)",marginTop:6}}>Choisissez le module à gérer</div>
+      </div>
+      <div style={{display:"flex",gap:20,flexWrap:"wrap",justifyContent:"center",maxWidth:560}}>
+        <div className="nm-card" onClick={onExtras} style={{cursor:"pointer",flex:1,minWidth:220,padding:28,textAlign:"center",transition:"transform .15s"}}
+          onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"}
+          onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+          <div style={{fontSize:48,marginBottom:12}}>🍽️</div>
+          <div style={{fontWeight:700,fontSize:17,marginBottom:6}}>EVP Extras</div>
+          <div style={{fontSize:13,color:"var(--tt-text-3)"}}>Gestion des extras, saisies de vacations, contrats</div>
+        </div>
+        <div className="nm-card" onClick={onLogistique} style={{cursor:"pointer",flex:1,minWidth:220,padding:28,textAlign:"center",transition:"transform .15s"}}
+          onMouseEnter={e=>e.currentTarget.style.transform="translateY(-3px)"}
+          onMouseLeave={e=>e.currentTarget.style.transform="none"}>
+          <div style={{fontSize:48,marginBottom:12}}>🚛</div>
+          <div style={{fontWeight:700,fontSize:17,marginBottom:6}}>EVP Logistique</div>
+          <div style={{fontSize:13,color:"var(--tt-text-3)"}}>Pointage internes, logistique, cuisine, plonge</div>
+        </div>
+      </div>
+      <button className="nm-btn ghost" onClick={onLogout} style={{marginTop:32,fontSize:13}}>
+        <i className="ti ti-logout"/> Déconnexion
+      </button>
+    </div>
+  );
+}
+
+function App() {
   const [saisies, setSaisies] = useState([]);
   const [session, setSession] = useState(null);
   const [ready, setReady]     = useState(false);
@@ -842,6 +879,10 @@ export default function App() {
         const meta = u.user_metadata || {};
         if (ADMIN_EMAILS.includes(u.email)) {
           setSession({ type: "admin" });
+        } else if (meta.poste && INTERNE_POSTES.includes(meta.poste)) {
+          setSession({ type: "interne", user: { id: u.id, email: u.email,
+            nom: (meta.nom || u.email.split("@")[0]).toUpperCase(),
+            poste: meta.poste }});
         } else {
           setSession({ type: "extra", user: { id: u.id, email: u.email,
             nom: meta.nom || u.email.split("@")[0].toUpperCase(),
@@ -896,7 +937,7 @@ export default function App() {
   if (!session) return (
     <>
       <style>{CSS}</style>
-      <LoginPage onLogin={u => setSession({type:"extra",user:u})} onAdminAccess={() => setSession({type:"admin"})}/>
+      <LoginPage onLogin={u => setSession(u.poste && INTERNE_POSTES.includes(u.poste) ? {type:"interne",user:u} : {type:"extra",user:u})} onAdminAccess={() => setSession({type:"admin"})}/>
     </>
   );
 
@@ -904,8 +945,40 @@ export default function App() {
     <ExtraApp user={session.user} saisies={saisies} onSave={addSaisie} onLogout={logout}/>
   );
 
+  if (session.type === "interne") return (
+    <>
+      <style>{CSS}</style>
+      <LogistiqueApp session={{ isAdmin: false, user: session.user }} onLogout={logout}/>
+    </>
+  );
+
+  // Admin — choix du module
+  if (session.type === "admin" && !session.module) return (
+    <>
+      <style>{CSS}</style>
+      <ModuleChoixAdmin
+        onExtras={() => setSession(s => ({...s, module:"extras"}))}
+        onLogistique={() => setSession(s => ({...s, module:"logistique"}))}
+        onLogout={logout}
+      />
+    </>
+  );
+
+  if (session.type === "admin" && session.module === "logistique") return (
+    <>
+      <style>{CSS}</style>
+      <AdminLogApp
+        pointages={[]}
+        onLogout={() => setSession(s => ({...s, module: null}))}
+      />
+    </>
+  );
+
   return (
-    <AdminApp saisies={saisies} users={[]} onAddSaisie={addSaisie} onDeleteSaisie={delSaisie} onLogout={logout}/>
+    <AdminApp saisies={saisies} users={[]} onAddSaisie={addSaisie} onDeleteSaisie={delSaisie}
+      onLogout={logout}
+      onSwitchModule={() => setSession(s => ({...s, module: null}))}
+    />
   );
 }
 
@@ -1105,7 +1178,6 @@ export function ContratModal({ saisie, onClose, readonlyExtra = null }) {
         date: saisie.date,
         poste: saisie.poste,
         total: calcTotal(saisie).toFixed(2),
-        pdf_link: pdfUri,
         from_name: "Trait'Tendance"
       });
       setSendResult(`✓ Contrat envoyé à ${emailTo}`);
