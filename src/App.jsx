@@ -865,8 +865,8 @@ export default function App() {
   }, []);
 
   async function addSaisie(s) {
-    const { id, ...data } = s;
-    await supabase.from("saisies").insert([{ ...data, created_at: new Date().toISOString() }]);
+    const { id, createdAt, created_at, ...data } = s;
+    await supabase.from("saisies").insert([data]);
   }
 
   async function delSaisie(id) {
